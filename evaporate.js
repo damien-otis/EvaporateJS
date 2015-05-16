@@ -68,9 +68,9 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            err = 'Missing attribute: name  ';
         }
         else if(con.encodeFilename) {
-           file.name = encodeURIComponent(file.name); // prevent signature fail in case file name has spaces 
-        }       
-        
+           file.name = encodeURIComponent(file.name); // prevent signature fail in case file name has spaces
+        }
+
         /*if (!(file.file instanceof File)){
            err += '.file attribute must be instanceof File';
         }*/
@@ -325,7 +325,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               var eTag = xhr.getResponseHeader('ETag'), msg;
               l.d('uploadPart 200 response for part #' + partNumber + '     ETag: ' + eTag);
               if(part.isEmpty || (eTag != ETAG_OF_0_LENGTH_BLOB)) // issue #58
-              { 
+              {
                  part.eTag = eTag;
                  part.status = COMPLETE;
               }
@@ -583,13 +583,13 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            }
            else
            {
-               var xmlHttpRequest = new XMLHttpRequest(); 
+               var xmlHttpRequest = new XMLHttpRequest();
 
                xmlHttpRequest.open("GET", con.timeUrl + '?requestTime=' + new Date().getTime(), false);
                xmlHttpRequest.send();
-               requester.dateString = xmlHttpRequest.responseText;               
+               requester.dateString = xmlHttpRequest.responseText;
            }
-           
+
            requester.x_amz_headers = extend(requester.x_amz_headers,{
               'x-amz-date': requester.dateString
            });
@@ -657,10 +657,14 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
         function authorizedSend(authRequester){
 
            l.d('authorizedSend() ' + authRequester.step);
+            if (con.lambda) {
+                return authorizedSignWithLambda(authRequester);
+            }
+
            var xhr = new XMLHttpRequest();
            xhrs.push(xhr);
            authRequester.authXhr = xhr;
-           var url = con.signerUrl+'?to_sign='+makeStringToSign(authRequester);
+           var url = con.signerUrl+'?to_sign='+encodeURIComponent(makeStringToSign(authRequester));
            var warnMsg;
 
            for (var param in me.signParams) {
@@ -714,6 +718,24 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            xhr.send();
         }
 
+         function authorizedSignWithLambda(authRequester) {
+             con.lambda.invoke({
+                 FunctionName: con.lambdaFunc,
+                 InvocationType: 'RequestResponse',
+                 Payload: JSON.stringify({"to_sign": makeStringToSign(authRequester)})
+             }, function (err, data) {
+                 if (err) {
+                     warnMsg = 'failed to get authorization with lambda ' + err;
+                     l.w(warnMsg);
+                     me.warn(warnMsg);
+                     authRequester.onFailedAuth(err);
+                     return;
+                 }
+                 authRequester.auth = JSON.parse(data.Payload);
+                 authRequester.onGotAuth();
+             })
+         }
+
         function makeStringToSign(request){
 
            var x_amz_headers = '', to_sign, header_key_array = [];
@@ -737,7 +759,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               x_amz_headers +
               (con.cloudfront ? '/' + con.bucket : '')+
               request.path;
-           return encodeURIComponent(to_sign);
+           return to_sign;
         }
 
        function getPath() {

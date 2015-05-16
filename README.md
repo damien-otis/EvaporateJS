@@ -138,7 +138,6 @@ The `supported` property is _Boolean_, and indicates whether the browser has the
 ## Integration
 
 * [angular-evaporate](https://github.com/uqee/angular-evaporate) &mdash; AngularJS module.
-* 
 
 ## License
 
@@ -148,3 +147,45 @@ http://opensource.org/licenses/BSD-3-Clause
 ## Working with temporary credentials in Amazon EC2 instances
 
 * [Security and S3 Multipart Upload](http://www.thoughtworks.com/mingle/infrastructure/2015/06/15/security-and-s3-multipart-upload.html)
+
+## Using AWS Lambda to do the signing
+
+You need to do a couple of things
+
+* Include the Aws SDK for Javascript, either directly, bower, or browserify
+    
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.28.min.js"></script>
+    
+* Create a lambda function see: [`signing_example_lambda.js`](example/signing_example_lambda.js)
+        
+* Setup an IAM user with permissions to call your lambda function. This user should be separate from the one that can
+upload to S3. Here is a sample policy
+
+    {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "Stmt1431709794000",
+                "Effect": "Allow",
+                "Action": [
+                    "lambda:InvokeFunction"
+                ],
+                "Resource": [
+                    "arn:aws:lambda:...:function:cw-signer"
+                ]
+            }
+        ]
+    }
+    
+* Pass two options to the Evaporate constructor - `lambda` and `lambdaFunc`, instead of `signerUrl`
+
+    var _e_ = new Evaporate({
+        aws_key: 'your aws_key here',
+        bucket: 'your s3 bucket name here',
+        lambda:  new AWS.Lambda({
+            'region': 'lambda region',
+            'accessKeyId': 'a key that can invoke the lambda function',
+            'secretAccessKey': 'the secret'
+        }),
+        lambdaFunc: 'arn:aws:lambda:...:function:cw-signer' // arn of your lambda function
+     });
