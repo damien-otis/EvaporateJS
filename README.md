@@ -161,6 +161,7 @@ You need to do a couple of things
 * Setup an IAM user with permissions to call your lambda function. This user should be separate from the one that can
 upload to S3. Here is a sample policy
 
+```javascript
     {
         "Version": "2012-10-17",
         "Statement": [
@@ -176,9 +177,11 @@ upload to S3. Here is a sample policy
             }
         ]
     }
-    
+```
+
 * Pass two options to the Evaporate constructor - `lambda` and `lambdaFunc`, instead of `signerUrl`
 
+```javascript
     var _e_ = new Evaporate({
         aws_key: 'your aws_key here',
         bucket: 'your s3 bucket name here',
@@ -189,3 +192,4 @@ upload to S3. Here is a sample policy
         }),
         lambdaFunc: 'arn:aws:lambda:...:function:cw-signer' // arn of your lambda function
      });
+```
