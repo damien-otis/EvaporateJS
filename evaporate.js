@@ -711,7 +711,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
                xhr.setRequestHeader(header, me.signHeaders[header])
              }
            }
-          
+
            if( me.beforeSigner instanceof Function ) {
              me.beforeSigner(xhr);
            }
@@ -719,10 +719,15 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
         }
 
          function authorizedSignWithLambda(authRequester) {
+console.log("authRequester",authRequester)
+            var sign_obj = makeObjectToSign(authRequester);
+
+console.log("authorizedSignWithLambda", makeStringToSign(authRequester))
+
              con.lambda.invoke({
                  FunctionName: con.lambdaFunc,
                  InvocationType: 'RequestResponse',
-                 Payload: JSON.stringify({"to_sign": makeStringToSign(authRequester)})
+                 Payload: JSON.stringify(sign_obj)
              }, function (err, data) {
                  if (err) {
                      warnMsg = 'failed to get authorization with lambda ' + err;
@@ -732,6 +737,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
                      return;
                  }
                  authRequester.auth = JSON.parse(data.Payload);
+console.log("authRequester.auth",authRequester.auth)
                  authRequester.onGotAuth();
              })
          }
@@ -751,22 +757,57 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               x_amz_headers += (header_key + ':'+ request.x_amz_headers[header_key] + '\n');
            });
 
-
+/*
            to_sign = request.method+'\n'+
-              '\n'+
               (request.contentType || '')+'\n'+
-              '\n'+
               x_amz_headers +
-              (con.cloudfront ? '/' + con.bucket : '')+
-              request.path;
+              (con.cloudfront ? '/' + con.bucket : '') + request.path;
            return to_sign;
+*/
+
+          to_sign = request.method + '\n' + (request.contentType || '') + '\n' + x_amz_headers + '/' + con.bucket + '/' + con.filename + '?uploads';
+
+          return to_sign
+
+        }
+
+        function makeObjectToSign(request){
+          var x_amz_headers = '', header_key_array = [];
+
+          var obj = {}
+
+          for (var key in request.x_amz_headers) {
+            if (request.x_amz_headers.hasOwnProperty(key)) {
+               header_key_array.push(key);
+            }
+          }
+          header_key_array.sort();
+
+          header_key_array.forEach(function(header_key,i){
+            x_amz_headers += (header_key + ':'+ request.x_amz_headers[header_key] + '\n');
+          });
+
+          obj.user_cookie     = con.user_cookie;
+          obj.method          = request.method;
+          obj.bucket          = con.bucket
+          obj.content_headers = x_amz_headers;
+          obj.content_type    = request.contentType || me.contentType;
+          obj.filename        = me.name;
+
+          return obj
         }
 
        function getPath() {
+
+console.log(">>>>>>>>>>>>>>>> me",me, con)
+/*
          var path = '/' + con.bucket + '/' + me.name;
+
          if (con.cloudfront || AWS_URL.indexOf('cloudfront') > -1) {
            path = '/' + me.name;
          }
+*/
+          var path = '/' + con.bucket + '/' + con.filename
          return path;
        }
 
