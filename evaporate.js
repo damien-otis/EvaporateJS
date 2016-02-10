@@ -233,6 +233,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            var initiate = {
               method: 'POST',
               path: getPath() + '?uploads',
+              part: '?uploads',
               step: 'initiate',
               x_amz_headers: me.xAmzHeadersAtInitiate,
               not_signed_headers: me.notSignedHeadersAtInitiate
@@ -248,7 +249,6 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            };
 
            initiate.on200 = function(xhr){
-
               var match = xhr.response.match(/<UploadId\>(.+)<\/UploadId\>/);
               if (match && match[1]){
                  me.uploadId = match[1];
@@ -284,6 +284,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            upload = {
               method: 'PUT',
               path: getPath() + '?partNumber='+partNumber+'&uploadId='+me.uploadId,
+              part: '?partNumber='+partNumber+'&uploadId='+me.uploadId,
               step: 'upload #' + partNumber,
               x_amz_headers: me.xAmzHeadersAtUpload,
               attempts: part.attempts
@@ -409,6 +410,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               contentType: 'application/xml; charset=UTF-8',
               path: getPath() + '?uploadId='+me.uploadId,
               x_amz_headers: me.xAmzHeadersAtComplete,
+              part: '?uploadId='+me.uploadId,
               step: 'complete'
            };
 
@@ -572,6 +574,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            },2 * 60 * 1000);
         }
 
+        //--------------------------------------------------------------------------
 
         function setupRequest(requester){
 
@@ -594,8 +597,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               'x-amz-date': requester.dateString
            });
 
-           requester.onGotAuth = function (){
 
+           requester.onGotAuth = function (){
               var xhr = new XMLHttpRequest();
               xhrs.push(xhr);
               requester.awsXhr = xhr;
@@ -652,127 +655,37 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            };
         }
 
-
+        //--------------------------------------------------------------------------
         //see: http://docs.amazonwebservices.com/AmazonS3/latest/dev/RESTAuthentication.html#ConstructingTheAuthenticationHeader
         function authorizedSend(authRequester){
 
-           l.d('authorizedSend() ' + authRequester.step);
-            if (con.lambda) {
-                return authorizedSignWithLambda(authRequester);
-            }
+          l.d('authorizedSend() ' + authRequester.step);
 
-           var xhr = new XMLHttpRequest();
-           xhrs.push(xhr);
-           authRequester.authXhr = xhr;
-           var url = con.signerUrl+'?to_sign='+encodeURIComponent(makeStringToSign(authRequester));
-           var warnMsg;
+          var sign_obj = makeObjectToSign(authRequester);
 
-           for (var param in me.signParams) {
-              if (!me.signParams.hasOwnProperty(param)) {continue;}
-             if( me.signParams[param] instanceof Function ) {
-               url += ('&'+encodeURIComponent(param)+'='+encodeURIComponent(me.signParams[param]()));
-             } else {
-               url += ('&'+encodeURIComponent(param)+'='+encodeURIComponent(me.signParams[param]));
-             }
-           }
 
-           xhr.onreadystatechange = function(){
-
-              if (xhr.readyState == 4){
-
-                 if (xhr.status == 200 && xhr.response.length == 28){
-
-                    l.d('authorizedSend got signature for step: \'' + authRequester.step + '\'    sig: '+ xhr.response);
-                    authRequester.auth = xhr.response;
-                    authRequester.onGotAuth();
-
-                 } else {
-                    warnMsg = 'failed to get authorization (readyState=4) for ' + authRequester.step + '.  xhr.status: ' + xhr.status + '.  xhr.response: ' + xhr.response;
-                    l.w(warnMsg);
-                    me.warn(warnMsg);
-                    authRequester.onFailedAuth(xhr);
-                 }
-              }
-           };
-
-           xhr.onerror = function(){
-              warnMsg = 'failed to get authorization (onerror) for ' + authRequester.step + '.  xhr.status: ' + xhr.status + '.  xhr.response: ' + xhr.response;
-              l.w(warnMsg);
-              me.warn(warnMsg);
-              authRequester.onFailedAuth(xhr);
-           };
-
-           xhr.open('GET', url);
-           for ( var header in me.signHeaders ) {
-             if (!me.signHeaders.hasOwnProperty(header)) {continue;}
-             if( me.signHeaders[header] instanceof Function ) {
-               xhr.setRequestHeader(header, me.signHeaders[header]())
-             } else {
-               xhr.setRequestHeader(header, me.signHeaders[header])
-             }
-           }
-
-           if( me.beforeSigner instanceof Function ) {
-             me.beforeSigner(xhr);
-           }
-           xhr.send();
-        }
-
-         function authorizedSignWithLambda(authRequester) {
-console.log("authRequester",authRequester)
-            var sign_obj = makeObjectToSign(authRequester);
-
-console.log("authorizedSignWithLambda", makeStringToSign(authRequester))
-
-             con.lambda.invoke({
-                 FunctionName: con.lambdaFunc,
-                 InvocationType: 'RequestResponse',
-                 Payload: JSON.stringify(sign_obj)
-             }, function (err, data) {
-                 if (err) {
-                     warnMsg = 'failed to get authorization with lambda ' + err;
-                     l.w(warnMsg);
-                     me.warn(warnMsg);
-                     authRequester.onFailedAuth(err);
-                     return;
-                 }
-                 authRequester.auth = JSON.parse(data.Payload);
-console.log("authRequester.auth",authRequester.auth)
-                 authRequester.onGotAuth();
-             })
-         }
-
-        function makeStringToSign(request){
-
-           var x_amz_headers = '', to_sign, header_key_array = [];
-
-           for (var key in request.x_amz_headers) {
-              if (request.x_amz_headers.hasOwnProperty(key)) {
-                 header_key_array.push(key);
-              }
-           }
-           header_key_array.sort();
-
-           header_key_array.forEach(function(header_key,i){
-              x_amz_headers += (header_key + ':'+ request.x_amz_headers[header_key] + '\n');
-           });
-
-/*
-           to_sign = request.method+'\n'+
-              (request.contentType || '')+'\n'+
-              x_amz_headers +
-              (con.cloudfront ? '/' + con.bucket : '') + request.path;
-           return to_sign;
-*/
-
-          to_sign = request.method + '\n' + (request.contentType || '') + '\n' + x_amz_headers + '/' + con.bucket + '/' + con.filename + '?uploads';
-
-          return to_sign
+           con.lambda.invoke({
+               FunctionName: con.lambdaFunc,
+               InvocationType: 'RequestResponse',
+               Payload: JSON.stringify(sign_obj)
+           }, function (err, data) {
+               if (err) {
+                   warnMsg = 'failed to get authorization with lambda ' + err;
+                   l.w(warnMsg);
+                   me.warn(warnMsg);
+                   authRequester.onFailedAuth(err);
+                   return;
+               }
+               authRequester.auth = JSON.parse(data.Payload);
+               authRequester.onGotAuth();
+           })
 
         }
+
+        //--------------------------------------------------------------------------
 
         function makeObjectToSign(request){
-          var x_amz_headers = '', header_key_array = [];
+          var x_amz_headers = [], header_key_array = [];
 
           var obj = {}
 
@@ -784,31 +697,27 @@ console.log("authRequester.auth",authRequester.auth)
           header_key_array.sort();
 
           header_key_array.forEach(function(header_key,i){
-            x_amz_headers += (header_key + ':'+ request.x_amz_headers[header_key] + '\n');
+            x_amz_headers.push(header_key + ':'+ request.x_amz_headers[header_key]);
           });
+
+          x_amz_headers = x_amz_headers.join("\n");
 
           obj.user_cookie     = con.user_cookie;
           obj.method          = request.method;
           obj.bucket          = con.bucket
           obj.content_headers = x_amz_headers;
-          obj.content_type    = request.contentType || me.contentType;
+          obj.content_type    = request.contentType;
+          obj.file_extension  = me.name.split(".").pop();
           obj.filename        = me.name;
+          obj.part            = encodeURIComponent(request.part);
 
           return obj
         }
 
+       //--------------------------------------------------------------------------
+
        function getPath() {
-
-console.log(">>>>>>>>>>>>>>>> me",me, con)
-/*
-         var path = '/' + con.bucket + '/' + me.name;
-
-         if (con.cloudfront || AWS_URL.indexOf('cloudfront') > -1) {
-           path = '/' + me.name;
-         }
-*/
-          var path = '/' + con.bucket + '/' + con.filename
-         return path;
+         return  '/' + con.bucket + '/' + con.filename;
        }
 
      }
