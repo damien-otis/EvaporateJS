@@ -27,6 +27,11 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
   var Evaporate = function(config){
 
+		 var lambda = new AWS.Lambda({
+        "accessKeyId": AWS.config.credentials.accessKeyId,
+        "secretAcessKey": AWS.config.credentials.secretAccessKey
+		 });
+
      this.supported = !((typeof(File)=='undefined') ||
         (typeof(Blob)=='undefined') ||
         !(!!Blob.prototype.webkitSlice || !!Blob.prototype.mozSlice || Blob.prototype.slice) ||
@@ -43,7 +48,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
      var files = [];
 
      var con = extend({
-
+ 
         logging: true,
         maxConcurrentParts: 5,
         partSize: 6 * 1024 * 1024,
@@ -68,7 +73,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            err = 'Missing attribute: name  ';
         }
         else if(con.encodeFilename) {
-           file.name = encodeURIComponent(file.name); // prevent signature fail in case file name has spaces
+           file.name = encodeURIComponent(file.filename || file.name); // prevent signature fail in case file name has spaces
         }
 
         /*if (!(file.file instanceof File)){
@@ -285,6 +290,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               method: 'PUT',
               path: getPath() + '?partNumber='+partNumber+'&uploadId='+me.uploadId,
               part: '?partNumber='+partNumber+'&uploadId='+me.uploadId,
+              contentType: me.contentType,
               step: 'upload #' + partNumber,
               x_amz_headers: me.xAmzHeadersAtUpload,
               attempts: part.attempts
@@ -580,14 +586,10 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
            l.d('setupRequest()',requester);
 
-           if(!con.timeUrl)
-           {
+           if(!con.timeUrl){
                requester.dateString = new Date().toUTCString();
-           }
-           else
-           {
+           } else {
                var xmlHttpRequest = new XMLHttpRequest();
-
                xmlHttpRequest.open("GET", con.timeUrl + '?requestTime=' + new Date().getTime(), false);
                xmlHttpRequest.send();
                requester.dateString = xmlHttpRequest.responseText;
@@ -597,13 +599,14 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
               'x-amz-date': requester.dateString
            });
 
-
            requester.onGotAuth = function (){
               var xhr = new XMLHttpRequest();
               xhrs.push(xhr);
               requester.awsXhr = xhr;
               var payload = requester.toSend ? requester.toSend() : null;
-              var url = AWS_URL + requester.path;
+              var url = AWS_URL + getPath() + requester.part//'?uploads',//requester.path;
+              
+
               var all_headers = {};
               extend(all_headers, requester.not_signed_headers);
               extend(all_headers, requester.x_amz_headers);
@@ -663,8 +666,9 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
           var sign_obj = makeObjectToSign(authRequester);
 
-
-           con.lambda.invoke({
+					sign_obj.action = "sign_s3_upload_evap"
+					 
+           lambda.invoke({
                FunctionName: con.lambdaFunc,
                InvocationType: 'RequestResponse',
                Payload: JSON.stringify(sign_obj)
@@ -676,8 +680,14 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
                    authRequester.onFailedAuth(err);
                    return;
                }
-               authRequester.auth = JSON.parse(data.Payload);
-               authRequester.onGotAuth();
+
+							var payload = JSON.parse(data.Payload);
+
+
+              con.bucket = payload.bucket;
+
+              authRequester.auth = payload.signed_key;
+              authRequester.onGotAuth();
            })
 
         }
@@ -686,6 +696,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
         function makeObjectToSign(request){
           var x_amz_headers = [], header_key_array = [];
+
 
           var obj = {}
 
@@ -702,13 +713,17 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
           x_amz_headers = x_amz_headers.join("\n");
 
-          obj.user_cookie     = con.user_cookie;
+//          obj.user_cookie     = con.user_cookie;
+//          obj.upload_type		  = con.upload_type;
+
+					extend(obj,con)
+
           obj.method          = request.method;
-          obj.bucket          = con.bucket
+//          obj.bucket          = con.bucket
           obj.content_headers = x_amz_headers;
           obj.content_type    = request.contentType;
-          obj.file_extension  = me.name.split(".").pop();
-          obj.filename        = me.name;
+          obj.file_extension  = (obj.filename || me.name).split(".").pop();
+          obj.filename        = obj.filename || me.name;
           obj.part            = encodeURIComponent(request.part);
 
           return obj
